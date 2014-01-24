@@ -2,7 +2,7 @@
 django-rollbar middleware
 
 To install, add the following in your settings.py:
-1. add 'rollbar.contrib.django.middleware.RollbarNotifierMiddleware' to MIDDLEWARE_CLASSES 
+1. add 'rollbar.contrib.django.middleware.RollbarNotifierMiddleware' to MIDDLEWARE_CLASSES
 2. add a section like this:
 ROLLBAR = {
     'access_token': 'tokengoeshere',
@@ -20,6 +20,7 @@ from django.core.exceptions import MiddlewareNotUsed
 from django.core.urlresolvers import resolve
 from django.conf import settings
 from django.http import Http404
+import collections
 
 log = logging.getLogger(__name__)
 
@@ -39,10 +40,10 @@ def _patch_debugview(rollbar_web_base):
         from django.views import debug
     except ImportError:
         return
-    
+
     if rollbar_web_base.endswith('/'):
         rollbar_web_base = rollbar_web_base[:-1]
-    
+
     # modify the TECHNICAL_500_TEMPLATE
     new_data = """
 {% if view_in_rollbar_url %}
@@ -55,7 +56,7 @@ def _patch_debugview(rollbar_web_base):
 
     insert_before = '<table class="meta">'
     replacement = new_data + insert_before
-    debug.TECHNICAL_500_TEMPLATE = debug.TECHNICAL_500_TEMPLATE.replace(insert_before, 
+    debug.TECHNICAL_500_TEMPLATE = debug.TECHNICAL_500_TEMPLATE.replace(insert_before,
         replacement, 1)
 
     # patch ExceptionReporter.get_traceback_data
@@ -81,16 +82,16 @@ class RollbarNotifierMiddleware(object):
 
         if not self._get_setting('enabled'):
             raise MiddlewareNotUsed
-        
+
         self._ensure_log_handler()
-        
+
         kw = self.settings.copy()
         access_token = kw.pop('access_token')
         environment = kw.pop('environment', 'development' if settings.DEBUG else 'production')
         kw.setdefault('exception_level_filters', DEFAULTS['exception_level_filters'])
-        
+
         rollbar.init(access_token, environment, **kw)
-        
+
         def hook(request, data):
             try:
                 # try django 1.5 method for getting url_name
@@ -106,17 +107,18 @@ class RollbarNotifierMiddleware(object):
                 data['context'] = url_name
 
             data['framework'] = 'django'
-            
+
             if request:
                 request.META['rollbar.uuid'] = data['uuid']
-            
+
         rollbar.BASE_DATA_HOOK = hook
-        
+
         # monkeypatch debug module
         if self._get_setting('patch_debugview'):
             try:
                 _patch_debugview(self._get_setting('web_base'))
-            except Exception, e:
+            except Exception:
+                e = sys.exc_info()[1]
                 log.error("Rollbar - unable to monkeypatch debugview to add 'View in Rollbar' link."
                     " To disable, set `ROLLBAR['patch_debugview'] = False` in settings.py."
                     " Exception was: %r", e)
@@ -132,14 +134,14 @@ class RollbarNotifierMiddleware(object):
             '%(asctime)s %(levelname)-5.5s [%(name)s][%(threadName)s] %(message)s')
         handler.setFormatter(formatter)
         log.addHandler(handler)
-    
+
     def _get_setting(self, name, default=None):
         try:
             return self.settings[name]
         except KeyError:
             if name in DEFAULTS:
                 default_val = DEFAULTS[name]
-                if callable(default_val):
+                if isinstance(default_val, collections.Callable):
                     return default_val()
                 return default_val
             return default

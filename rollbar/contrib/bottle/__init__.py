@@ -20,7 +20,7 @@ class RollbarBottleReporter(object):
         def wrapper(*args, **kwargs):
             try:
                 return callback(*args, **kwargs)
-            except Exception, e:
+            except Exception:
                 payload_data = None
                 try:
                     route = bottle.request['bottle.route']
